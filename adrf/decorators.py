@@ -1,17 +1,26 @@
 import asyncio
 import types
+from typing import Any, Callable, Optional, Sequence, Type, TypeVar
+
+from django.http.response import HttpResponseBase
+from rest_framework.authentication import BaseAuthentication
 
 from adrf.views import APIView
 
+_CallableViewHandler = Callable[..., HttpResponseBase]
+_F = TypeVar("_F", bound=_CallableViewHandler)
 
-def api_view(http_method_names=None):
+_AuthClassesParam = Sequence[Type[BaseAuthentication]]
+
+
+def api_view(http_method_names: Optional[Sequence[str]] = None):
     """
     Decorator that converts a function-based view into an APIView subclass.
     Takes a list of allowed methods for the view as an argument.
     """
     http_method_names = ["GET"] if (http_method_names is None) else http_method_names
 
-    def decorator(func):
+    def decorator(func: Callable[..., Any]):
         WrappedAPIView = type("WrappedAPIView", (APIView,), {"__doc__": func.__doc__})
 
         # Note, the above allows us to set the docstring.
@@ -41,12 +50,12 @@ def api_view(http_method_names=None):
 
         if view_is_async:
 
-            async def handler(self, *args, **kwargs):
+            async def handler(_, *args: Any, **kwargs: Any):  # type: ignore
                 return await func(*args, **kwargs)
 
         else:
 
-            def handler(self, *args, **kwargs):
+            def handler(_, *args: Any, **kwargs: Any):
                 return func(*args, **kwargs)
 
         for method in http_method_names:

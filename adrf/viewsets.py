@@ -1,7 +1,9 @@
 import asyncio
 import inspect
 from functools import update_wrapper
+from typing import Any, Dict, Optional
 
+from django.http import HttpRequest
 from django.utils.decorators import classonlymethod
 from django.utils.functional import classproperty
 from rest_framework.viewsets import ViewSetMixin as DRFViewSetMixin
@@ -26,7 +28,7 @@ class ViewSetMixin(DRFViewSetMixin):
     """
 
     @classonlymethod
-    def as_view(cls, actions=None, **initkwargs):
+    def as_view(cls, actions: Optional[Dict[str, str]] = None, **initkwargs: Any):
         """
         Because of the way class based views create a closure around the
         instantiated view, we need to totally reimplement `.as_view`,
@@ -75,7 +77,7 @@ class ViewSetMixin(DRFViewSetMixin):
                 "mutually exclusive arguments." % (cls.__name__)
             )
 
-        def view(request, *args, **kwargs):
+        def view(request: HttpRequest, *args: Any, **kwargs: Any):
             self = cls(**initkwargs)
 
             if "get" in actions and "head" not in actions:
@@ -99,7 +101,7 @@ class ViewSetMixin(DRFViewSetMixin):
             # or continue as usual
             return self.dispatch(request, *args, **kwargs)
 
-        async def async_view(request, *args, **kwargs):
+        async def async_view(request: HttpRequest, *args: Any, **kwargs: Any):
             self = cls(**initkwargs)
 
             if "get" in actions and "head" not in actions:

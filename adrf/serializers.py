@@ -1,5 +1,6 @@
 import traceback
 from collections import OrderedDict
+from typing import Any, List, NoReturn
 
 from async_property import async_property
 from django.db import models
@@ -30,7 +31,7 @@ class BaseSerializer(DRFBaseSerializer):
     """
 
     @classmethod
-    def many_init(cls, *args, **kwargs):
+    def many_init(cls, *args: Any, **kwargs: Any):
         allow_empty = kwargs.pop("allow_empty", None)
         max_length = kwargs.pop("max_length", None)
         min_length = kwargs.pop("min_length", None)
@@ -56,7 +57,7 @@ class BaseSerializer(DRFBaseSerializer):
         return list_serializer_class(*args, **list_kwargs)
 
     @async_property
-    async def adata(self):
+    async def adata(self) -> Any:
         if hasattr(self, "initial_data") and not hasattr(self, "_validated_data"):
             msg = (
                 "When a serializer is passed a `data` keyword argument you "
@@ -79,16 +80,16 @@ class BaseSerializer(DRFBaseSerializer):
 
         return self._data
 
-    async def ato_representation(self, instance):
+    async def ato_representation(self, instance: Any) -> Any:
         raise NotImplementedError("`ato_representation()` must be implemented.")
 
-    async def aupdate(self, instance, validated_data):
+    async def aupdate(self, instance: Any, validated_data: Any) -> Any:
         raise NotImplementedError("`aupdate()` must be implemented.")
 
-    async def acreate(self, validated_data):
+    async def acreate(self, validated_data: Any) -> Any:
         raise NotImplementedError("`acreate()` must be implemented.")
 
-    async def asave(self, **kwargs):
+    async def asave(self, **kwargs: Any):
         assert hasattr(
             self, "_errors"
         ), "You must call `.is_valid()` before calling `.asave()`."
@@ -139,7 +140,7 @@ class Serializer(BaseSerializer, DRFSerializer):
 
         return ReturnDict(ret, serializer=self)
 
-    async def ato_representation(self, instance):
+    async def ato_representation(self, instance: Any) -> Any:
         """
         Object instance -> Dict of primitive datatypes.
         """
@@ -170,7 +171,7 @@ class Serializer(BaseSerializer, DRFSerializer):
 
 
 class ListSerializer(BaseSerializer, DRFListSerializer):
-    async def ato_representation(self, data):
+    async def ato_representation(self, data: Any) -> Any:
         """
         List of object instances -> List of dicts of primitive datatypes.
         """
@@ -185,7 +186,7 @@ class ListSerializer(BaseSerializer, DRFListSerializer):
         else:
             return [await self.child.ato_representation(item) for item in data]
 
-    async def asave(self, **kwargs):
+    async def asave(self, **kwargs: Any) -> Any:
         """
         Save and return a list of object instances.
         """
@@ -214,7 +215,7 @@ class ListSerializer(BaseSerializer, DRFListSerializer):
 
         return self.instance
 
-    async def aupdate(self, instance, validated_data):
+    async def aupdate(self, instance: Any, validated_data: Any) -> NoReturn:
         raise NotImplementedError(
             "Serializers with many=True do not support multiple update by "
             "default, only multiple create. For updates it is unclear how to "
@@ -224,16 +225,16 @@ class ListSerializer(BaseSerializer, DRFListSerializer):
         )
 
     @async_property
-    async def adata(self):
+    async def adata(self) -> Any:
         ret = await super().adata
         return ReturnList(ret, serializer=self)
 
-    async def acreate(self, validated_data):
+    async def acreate(self, validated_data: Any) -> List[Any]:
         return [await self.child.acreate(attrs) for attrs in validated_data]
 
 
 class ModelSerializer(Serializer, DRFModelSerializer):
-    async def acreate(self, validated_data):
+    async def acreate(self, validated_data: Any):
         """
         Create and return a new `Snippet` instance, given the validated data.
         """
@@ -276,7 +277,7 @@ class ModelSerializer(Serializer, DRFModelSerializer):
 
         return instance
 
-    async def aupdate(self, instance, validated_data):
+    async def aupdate(self, instance: Any, validated_data: Any):
         raise_errors_on_nested_writes("aupdate", self, validated_data)
         info = model_meta.get_field_info(instance)
 

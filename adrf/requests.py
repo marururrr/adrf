@@ -1,6 +1,7 @@
 import asyncio
 
 from asgiref.sync import async_to_sync
+from django.contrib.auth.models import AbstractBaseUser, AnonymousUser
 from rest_framework import exceptions
 from rest_framework.request import Request, wrap_attributeerrors
 
@@ -20,7 +21,7 @@ class AsyncRequest(Request):
         return self._user
 
     @user.setter
-    def user(self, value):
+    def user(self, value: AbstractBaseUser | AnonymousUser):
         """
         Sets the user on the current request. This is necessary to maintain
         compatibility with django.contrib.auth where the user property is

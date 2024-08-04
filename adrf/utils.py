@@ -1,9 +1,14 @@
 import inspect
+from typing import Any, Callable, List, Optional
 
 
 # NOTE This function was taken from the python library and modified
 # to allow an exclusion list and avoid recursion errors.
-def getmembers(object, predicate, exclude_names=[]):
+def getmembers(
+    object: Any,
+    predicate: Optional[Callable[[Any], bool]] = None,
+    exclude_names: Optional[List[str]] = [],
+) -> List[Any]:
     results = []
     processed = set()
     names = [x for x in dir(object) if x not in exclude_names]

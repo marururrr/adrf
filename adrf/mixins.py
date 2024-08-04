@@ -1,9 +1,16 @@
+from typing import Any
+
 from asgiref.sync import sync_to_async
+from django.db.models import Model
 from rest_framework import mixins, status
+from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.serializers import BaseSerializer as DRFBaseSerializer
+
+from adrf.serializers import BaseSerializer
 
 
-async def get_data(serializer):
+async def get_data(serializer: DRFBaseSerializer) -> Any:
     """Use adata if the serializer supports it, data otherwise."""
     return await serializer.adata if hasattr(serializer, "adata") else serializer.data
 
@@ -13,7 +20,7 @@ class CreateModelMixin(mixins.CreateModelMixin):
     Create a model instance.
     """
 
-    async def acreate(self, request, *args, **kwargs):
+    async def acreate(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         serializer = self.get_serializer(data=request.data)
         await sync_to_async(serializer.is_valid)(raise_exception=True)
         await self.perform_acreate(serializer)
@@ -21,7 +28,7 @@ class CreateModelMixin(mixins.CreateModelMixin):
         headers = self.get_success_headers(data)
         return Response(data, status=status.HTTP_201_CREATED, headers=headers)
 
-    async def perform_acreate(self, serializer):
+    async def perform_acreate(self, serializer: BaseSerializer):
         await serializer.asave()
 
 
@@ -30,7 +37,7 @@ class ListModelMixin(mixins.ListModelMixin):
     List a queryset.
     """
 
-    async def alist(self, *args, **kwargs):
+    async def alist(self, *args: Any, **kwargs: Any) -> Response:
         queryset = self.filter_queryset(self.get_queryset())
 
         page = await self.apaginate_queryset(queryset)
@@ -49,7 +56,7 @@ class RetrieveModelMixin(mixins.RetrieveModelMixin):
     Retrieve a model instance.
     """
 
-    async def aretrieve(self, request, *args, **kwargs):
+    async def aretrieve(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         instance = await self.aget_object()
         serializer = self.get_serializer(instance, many=False)
         data = await get_data(serializer)
@@ -61,7 +68,7 @@ class UpdateModelMixin(mixins.UpdateModelMixin):
     Update a model instance.
     """
 
-    async def aupdate(self, request, *args, **kwargs):
+    async def aupdate(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         partial = kwargs.pop("partial", False)
         instance = await self.aget_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
@@ -76,10 +83,12 @@ class UpdateModelMixin(mixins.UpdateModelMixin):
 
         return Response(data, status=status.HTTP_200_OK)
 
-    async def perform_aupdate(self, serializer):
+    async def perform_aupdate(self, serializer: BaseSerializer):
         await serializer.asave()
 
-    async def partial_aupdate(self, request, *args, **kwargs):
+    async def partial_aupdate(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         kwargs["partial"] = True
         return await self.aupdate(request, *args, **kwargs)
 
@@ -89,10 +98,10 @@ class DestroyModelMixin(mixins.DestroyModelMixin):
     Destroy a model instance.
     """
 
-    async def adestroy(self, request, *args, **kwargs):
+    async def adestroy(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         instance = await self.aget_object()
         await self.perform_adestroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    async def perform_adestroy(self, instance):
+    async def perform_adestroy(self, instance: Model):
         await instance.adelete()

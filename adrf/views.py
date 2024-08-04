@@ -1,7 +1,8 @@
 import asyncio
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from asgiref.sync import async_to_sync, sync_to_async
+from django.http import HttpRequest
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 from rest_framework.throttling import BaseThrottle
@@ -11,7 +12,7 @@ from adrf.requests import AsyncRequest
 
 
 class APIView(DRFAPIView):
-    def sync_dispatch(self, request, *args, **kwargs):
+    def sync_dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any):
         """
         `.sync_dispatch()` is pretty much the same as Django's regular dispatch,
         but with extra hooks for startup, finalize, and exception handling.
@@ -41,7 +42,7 @@ class APIView(DRFAPIView):
         self.response = self.finalize_response(request, response, *args, **kwargs)
         return self.response
 
-    async def async_dispatch(self, request, *args, **kwargs):
+    async def async_dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any):
         """
         `.async_dispatch()` is pretty much the same as Django's regular dispatch,
         except for awaiting the handler function and with extra hooks for startup,
@@ -75,7 +76,7 @@ class APIView(DRFAPIView):
         self.response = self.finalize_response(request, response, *args, **kwargs)
         return self.response
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any):
         """
         Dispatch checks if the view is async or not and uses the respective
         async or sync dispatch method.
@@ -85,7 +86,7 @@ class APIView(DRFAPIView):
         else:
             return self.sync_dispatch(request, *args, **kwargs)
 
-    def initialize_request(self, request, *args, **kwargs):
+    def initialize_request(self, request: HttpRequest, *args: Any, **kwargs: Any):
         """
         Returns the initial request object.
         """
@@ -158,7 +159,7 @@ class APIView(DRFAPIView):
                     code=getattr(permission, "code", None),
                 )
 
-    def check_object_permissions(self, request: Request, obj) -> None:
+    def check_object_permissions(self, request: Request, obj: Any) -> None:
         permissions = self.get_permissions()
 
         if not permissions:
@@ -181,7 +182,7 @@ class APIView(DRFAPIView):
             self.check_sync_object_permissions(request, sync_permissions, obj)
 
     async def check_async_object_permissions(
-        self, request: AsyncRequest, permissions: List[BasePermission], obj
+        self, request: AsyncRequest, permissions: List[BasePermission], obj: Any
     ) -> None:
         """
         Check if the request should be permitted asynchronously.
@@ -207,7 +208,7 @@ class APIView(DRFAPIView):
                 )
 
     def check_sync_object_permissions(
-        self, request: Request, permissions: List[BasePermission], obj
+        self, request: Request, permissions: List[BasePermission], obj: Any
     ) -> None:
         """
         Check if the request should be permitted synchronously.
