@@ -1,13 +1,27 @@
+import asyncio
 import traceback
 from collections import OrderedDict
-from typing import Any, List, NoReturn
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    NoReturn,
+    Protocol,
+    Set,
+    Type,
+    TypeGuard,
+    cast,
+)
 
+from asgiref.sync import sync_to_async
 from async_property import async_property
+from async_property.base import AsyncPropertyDescriptor
 from django.db import models
-from rest_framework.fields import SkipField
+from rest_framework.fields import Field, SkipField
 from rest_framework.serializers import (
     LIST_SERIALIZER_KWARGS,
-    model_meta,
+    model_meta,  # type: ignore
     raise_errors_on_nested_writes,
 )
 from rest_framework.serializers import BaseSerializer as DRFBaseSerializer
@@ -16,13 +30,84 @@ from rest_framework.serializers import ModelSerializer as DRFModelSerializer
 from rest_framework.serializers import Serializer as DRFSerializer
 from rest_framework.utils.serializer_helpers import ReturnDict, ReturnList
 
-# NOTE This is the list of fields defined by DRF for which we need to call to_rapresentation.
-DRF_FIELDS = list(DRFModelSerializer.serializer_field_mapping.values()) + [
-    DRFModelSerializer.serializer_related_field,
-    DRFModelSerializer.serializer_related_to_field,
-    DRFModelSerializer.serializer_url_field,
-    DRFModelSerializer.serializer_choice_field,
-]
+
+class AsyncSerializerProtocol(Protocol):
+    @async_property
+    async def adata(self): ...
+    async def ato_representation(self, data: Any) -> Any: ...
+    async def aupdate(self, instance: Any, validated_data: Any) -> Any: ...
+    async def acreate(self, validated_data: Any) -> Any: ...
+    async def asave(self, **kwargs: Any) -> Any: ...
+
+
+class HasAtoRepresentation(Protocol):
+    async def ato_representation(self, instance: Any) -> Any: ...
+
+
+def has_ato_representation(obj: Any) -> TypeGuard[HasAtoRepresentation]:
+    return asyncio.iscoroutinefunction(getattr(obj, "ato_representation", None))
+
+
+class HasAcreate(Protocol):
+    async def acreate(self, validated_data: Any): ...
+
+
+def has_acreate(obj: Any) -> TypeGuard[HasAcreate]:
+    return asyncio.iscoroutinefunction(getattr(obj, "acreate", None))
+
+
+class HasAdata(Protocol):
+    @async_property
+    async def adata(self) -> Any: ...
+
+
+def has_adata(obj: Any) -> TypeGuard[HasAdata]:
+    if hasattr(obj, "adata"):
+        assert isinstance(getattr(obj.__class__, "adata"), AsyncPropertyDescriptor)
+        return True
+    return False
+    # return isinstance(getattr(obj.__class__, "adata", None), AsyncPropertyDescriptor)
+
+
+class HasAsave(Protocol):
+    async def asave(self, **kwargs: Any): ...
+
+
+def has_asave(obj: Any) -> TypeGuard[HasAsave]:
+    return asyncio.iscoroutinefunction(getattr(obj, "asave", None))
+
+
+async def serializer_adata(serializer: DRFBaseSerializer):
+    """Use adata if the serializer supports it, data otherwise."""
+    return await (
+        serializer.adata
+        if has_adata(serializer)
+        else sync_to_async(lambda: serializer.data)()
+    )
+
+
+async def serializer_asave(serializer: DRFBaseSerializer, **kwargs: Any):
+    """Use asave() if the serializer supports it, save() otherwise."""
+    return await (
+        serializer.asave(**kwargs)
+        if has_asave(serializer)
+        else sync_to_async(serializer.save)(**kwargs)
+    )
+
+
+# NOTE This is the list of fields defined by DRF for which we need to call to_representation.
+SOOP_FREE_DRF_FIELDS = cast(  # djangorestframework-types-0.8.0 has wrong declarations
+    Set[Type[Field[Any, Any, Any, Any]]],
+    set(
+        list(DRFModelSerializer.serializer_field_mapping.values())
+        + [
+            DRFModelSerializer.serializer_related_field,
+            DRFModelSerializer.serializer_related_to_field,  # SlugRelatedField is free from SO-op?
+            DRFModelSerializer.serializer_url_field,
+            DRFModelSerializer.serializer_choice_field,
+        ]
+    ),
+)
 
 
 class BaseSerializer(DRFBaseSerializer):
@@ -138,14 +223,14 @@ class Serializer(BaseSerializer, DRFSerializer):
 
         ret = await super().adata
 
-        return ReturnDict(ret, serializer=self)
+        return ReturnDict(ret, serializer=self)  # type: ignore  # djangorestframework-types-0.8.0 has wrong declarations
 
     async def ato_representation(self, instance: Any) -> Any:
         """
         Object instance -> Dict of primitive datatypes.
         """
 
-        ret = OrderedDict()
+        ret: Dict[str, Any] = OrderedDict()
         fields = self._readable_fields
 
         for field in fields:
@@ -157,21 +242,25 @@ class Serializer(BaseSerializer, DRFSerializer):
             check_for_none = (
                 attribute.pk if isinstance(attribute, models.Model) else attribute
             )
+            field_name = field.field_name
+            assert field_name is not None
             if check_for_none is None:
-                ret[field.field_name] = None
+                ret[field_name] = None
             else:
-                if type(field) in DRF_FIELDS:
+                if type(field) in SOOP_FREE_DRF_FIELDS:
                     repr = field.to_representation(attribute)
-                else:
+                elif has_ato_representation(field):
                     repr = await field.ato_representation(attribute)
+                else:
+                    repr = await sync_to_async(field.to_representation)(attribute)
 
-                ret[field.field_name] = repr
+                ret[field_name] = repr
 
         return ret
 
 
 class ListSerializer(BaseSerializer, DRFListSerializer):
-    async def ato_representation(self, data: Any) -> Any:
+    async def ato_representation(self, data: Any) -> Any:  # pyright: ignore[reportIncompatibleMethodOverride]
         """
         List of object instances -> List of dicts of primitive datatypes.
         """
@@ -181,10 +270,30 @@ class ListSerializer(BaseSerializer, DRFListSerializer):
         if isinstance(data, models.Manager):
             data = data.all()
 
-        if isinstance(data, models.query.QuerySet):
-            return [await self.child.ato_representation(item) async for item in data]
+        if has_ato_representation(self.child):
+            if isinstance(data, models.query.QuerySet):
+                return [
+                    await self.child.ato_representation(item)
+                    async for item in data  # type: ignore
+                ]
+            else:
+                return [await self.child.ato_representation(item) for item in data]
         else:
-            return [await self.child.ato_representation(item) for item in data]
+            assert self.child is not None
+            if isinstance(data, models.query.QuerySet):
+                return [
+                    await sync_to_async(
+                        cast(Callable[[Any], Any], self.child.to_representation)
+                    )(item)
+                    async for item in data  # type: ignore
+                ]
+            else:
+                return [
+                    await sync_to_async(
+                        cast(Callable[[Any], Any], self.child.to_representation)
+                    )(item)
+                    for item in data
+                ]
 
     async def asave(self, **kwargs: Any) -> Any:
         """
@@ -227,10 +336,16 @@ class ListSerializer(BaseSerializer, DRFListSerializer):
     @async_property
     async def adata(self):
         ret = await super().adata
-        return ReturnList(ret, serializer=self)
+        return ReturnList(ret, serializer=self)  # type: ignore  # djangorestframework-types-0.8.0 has wrong declarations
 
     async def acreate(self, validated_data: Any) -> List[Any]:
-        return [await self.child.acreate(attrs) for attrs in validated_data]
+        if has_acreate(self.child):
+            return [await self.child.acreate(attrs) for attrs in validated_data]
+        else:
+            return [
+                await sync_to_async(cast(DRFBaseSerializer, self.child).create)(attrs)
+                for attrs in validated_data
+            ]
 
 
 class ModelSerializer(Serializer, DRFModelSerializer):

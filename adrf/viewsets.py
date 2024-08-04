@@ -5,13 +5,14 @@ from typing import Any, Dict, Optional
 
 from django.http import HttpRequest
 from django.utils.decorators import classonlymethod
-from django.utils.functional import classproperty
+from django.utils.functional import classproperty  # type: ignore
+from rest_framework.views import APIView as DRFAPIView
 from rest_framework.viewsets import ViewSetMixin as DRFViewSetMixin
 
 from adrf import mixins
 from adrf.generics import GenericAPIView
 from adrf.utils import getmembers
-from adrf.views import APIView
+from adrf.views import AsyncAPIViewMixin
 
 
 class ViewSetMixin(DRFViewSetMixin):
@@ -28,12 +29,14 @@ class ViewSetMixin(DRFViewSetMixin):
     """
 
     @classonlymethod
-    def as_view(cls, actions: Optional[Dict[str, str]] = None, **initkwargs: Any):
+    def as_view(cls, actions: Optional[Dict[str, str]] = None, **initkwargs: Any):  # pyright: ignore[reportIncompatibleMethodOverride]
         """
         Because of the way class based views create a closure around the
         instantiated view, we need to totally reimplement `.as_view`,
         and slightly modify the view function that is created and returned.
         """
+        assert isinstance(cls, type)
+        assert issubclass(cls, DRFAPIView)
         # The name and description initkwargs may be explicitly overridden for
         # certain route configurations. eg, names of extra actions.
         cls.name = None
@@ -78,7 +81,7 @@ class ViewSetMixin(DRFViewSetMixin):
             )
 
         def view(request: HttpRequest, *args: Any, **kwargs: Any):
-            self = cls(**initkwargs)
+            self: Any = cls(**initkwargs)
 
             if "get" in actions and "head" not in actions:
                 actions["head"] = actions["get"]
@@ -102,7 +105,7 @@ class ViewSetMixin(DRFViewSetMixin):
             return self.dispatch(request, *args, **kwargs)
 
         async def async_view(request: HttpRequest, *args: Any, **kwargs: Any):
-            self = cls(**initkwargs)
+            self: Any = cls(**initkwargs)
 
             if "get" in actions and "head" not in actions:
                 actions["head"] = actions["get"]
@@ -137,14 +140,14 @@ class ViewSetMixin(DRFViewSetMixin):
         # We need to set these on the view function, so that breadcrumb
         # generation can pick out these bits of information from a
         # resolved URL.
-        view.cls = cls
-        view.initkwargs = initkwargs
-        view.actions = actions
-        view.csrf_exempt = True
+        setattr(view, "cls", cls)
+        setattr(view, "initkwargs", initkwargs)
+        setattr(view, "actions", actions)
+        setattr(view, "csrf_exempt", True)
         return view
 
 
-class ViewSet(ViewSetMixin, APIView):
+class ViewSet(ViewSetMixin, AsyncAPIViewMixin, DRFAPIView):
     _ASYNC_NON_DISPATCH_METHODS = [
         "check_async_object_permissions",
         "async_dispatch",
@@ -152,7 +155,7 @@ class ViewSet(ViewSetMixin, APIView):
         "check_async_throttles",
     ]
 
-    @classproperty
+    @classproperty  # type: ignore
     def view_is_async(cls):
         """
         Checks whether any viewset methods are coroutines.

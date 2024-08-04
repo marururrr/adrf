@@ -30,7 +30,7 @@ def aget_object_or_404(
         raise Http404
 
 
-class GenericAPIView(views.APIView, DRFGenericAPIView):
+class GenericAPIView(views.AsyncAPIViewMixin, DRFGenericAPIView):
     """This generic API view supports async pagination."""
 
     async def aget_object(self):

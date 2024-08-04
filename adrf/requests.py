@@ -41,6 +41,10 @@ class AsyncRequest(Request):
             exceptions.APIException: If an exception occurs during authentication.
 
         """
+        assert (
+            self.authenticators is not None
+        )  # djangorestframework-types-0.8.0 has wrong declarations
+
         for authenticator in self.authenticators:
             try:
                 if asyncio.iscoroutinefunction(authenticator.authenticate):
@@ -48,12 +52,14 @@ class AsyncRequest(Request):
                 else:
                     user_auth_tuple = authenticator.authenticate(self)
             except exceptions.APIException:
-                self._not_authenticated()
+                self._not_authenticated()  # type: ignore  # djangorestframework-types-0.8.0 lacks the declarations.
                 raise
 
             if user_auth_tuple is not None:
                 self._authenticator = authenticator
-                self.user, self.auth = user_auth_tuple
+                u, self.auth = user_auth_tuple
+                assert u is not None
+                self.user = u
                 return
 
-        self._not_authenticated()
+        self._not_authenticated()  # type: ignore  # djangorestframework-types-0.8.0 lacks the declarations.

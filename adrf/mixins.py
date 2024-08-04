@@ -1,18 +1,17 @@
-from typing import Any
+from typing import Any, cast
 
 from asgiref.sync import sync_to_async
-from django.db.models import Model
+from django.db.models import Model, QuerySet
 from rest_framework import mixins, status
+from rest_framework.generics import GenericAPIView as DRFGenericAPIView
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer as DRFBaseSerializer
 
-from adrf.serializers import BaseSerializer
-
-
-async def get_data(serializer: DRFBaseSerializer) -> Any:
-    """Use adata if the serializer supports it, data otherwise."""
-    return await serializer.adata if hasattr(serializer, "adata") else serializer.data
+from adrf.serializers import (
+    serializer_adata,
+    serializer_asave,
+)
 
 
 class CreateModelMixin(mixins.CreateModelMixin):
@@ -21,15 +20,15 @@ class CreateModelMixin(mixins.CreateModelMixin):
     """
 
     async def acreate(self, request: Request, *args: Any, **kwargs: Any) -> Response:
-        serializer = self.get_serializer(data=request.data)
+        serializer = cast(DRFGenericAPIView, self).get_serializer(data=request.data)
         await sync_to_async(serializer.is_valid)(raise_exception=True)
         await self.perform_acreate(serializer)
-        data = await get_data(serializer)
+        data = await serializer_adata(serializer)
         headers = self.get_success_headers(data)
         return Response(data, status=status.HTTP_201_CREATED, headers=headers)
 
-    async def perform_acreate(self, serializer: BaseSerializer):
-        await serializer.asave()
+    async def perform_acreate(self, serializer: DRFBaseSerializer):
+        await serializer_asave(serializer)
 
 
 class ListModelMixin(mixins.ListModelMixin):
@@ -38,16 +37,19 @@ class ListModelMixin(mixins.ListModelMixin):
     """
 
     async def alist(self, *args: Any, **kwargs: Any) -> Response:
-        queryset = self.filter_queryset(self.get_queryset())
+        from adrf.generics import GenericAPIView
 
-        page = await self.apaginate_queryset(queryset)
+        assert isinstance(self, GenericAPIView)
+        queryset = self.filter_queryset(self.get_queryset())  # type: ignore  # why?
+
+        page = await self.apaginate_queryset(cast(QuerySet[Any], queryset))
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            data = await get_data(serializer)
+            data = await serializer_adata(serializer)
             return await self.get_apaginated_response(data)
 
         serializer = self.get_serializer(queryset, many=True)
-        data = await get_data(serializer)
+        data = await serializer_adata(serializer)
         return Response(data, status=status.HTTP_200_OK)
 
 
@@ -57,9 +59,12 @@ class RetrieveModelMixin(mixins.RetrieveModelMixin):
     """
 
     async def aretrieve(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        from adrf.generics import GenericAPIView
+
+        assert isinstance(self, GenericAPIView)
         instance = await self.aget_object()
         serializer = self.get_serializer(instance, many=False)
-        data = await get_data(serializer)
+        data = await serializer_adata(serializer)
         return Response(data, status=status.HTTP_200_OK)
 
 
@@ -69,6 +74,9 @@ class UpdateModelMixin(mixins.UpdateModelMixin):
     """
 
     async def aupdate(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        from adrf.generics import GenericAPIView
+
+        assert isinstance(self, GenericAPIView)
         partial = kwargs.pop("partial", False)
         instance = await self.aget_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
@@ -79,12 +87,12 @@ class UpdateModelMixin(mixins.UpdateModelMixin):
             # If 'prefetch_related' has been applied to a queryset, we need to
             # forcibly invalidate the prefetch cache on the instance.
             instance._prefetched_objects_cache = {}
-        data = await get_data(serializer)
+        data = await serializer_adata(serializer)
 
         return Response(data, status=status.HTTP_200_OK)
 
-    async def perform_aupdate(self, serializer: BaseSerializer):
-        await serializer.asave()
+    async def perform_aupdate(self, serializer: DRFBaseSerializer):
+        await serializer_asave(serializer)
 
     async def partial_aupdate(
         self, request: Request, *args: Any, **kwargs: Any
@@ -99,6 +107,9 @@ class DestroyModelMixin(mixins.DestroyModelMixin):
     """
 
     async def adestroy(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        from adrf.generics import GenericAPIView
+
+        assert isinstance(self, GenericAPIView)
         instance = await self.aget_object()
         await self.perform_adestroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)

@@ -1,5 +1,5 @@
 import inspect
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Optional, Set, Tuple
 
 
 # NOTE This function was taken from the python library and modified
@@ -7,10 +7,10 @@ from typing import Any, Callable, List, Optional
 def getmembers(
     object: Any,
     predicate: Optional[Callable[[Any], bool]] = None,
-    exclude_names: Optional[List[str]] = [],
+    exclude_names: List[str] = [],
 ) -> List[Any]:
-    results = []
-    processed = set()
+    results: List[Tuple[str, Any]] = []
+    processed: Set[str] = set()
     names = [x for x in dir(object) if x not in exclude_names]
     if inspect.isclass(object):
         mro = inspect.getmro(object)
@@ -21,7 +21,7 @@ def getmembers(
             for base in object.__bases__:
                 for k, v in base.__dict__.items():
                     if (
-                        isinstance(v, inspect.types.DynamicClassAttribute)
+                        isinstance(v, inspect.types.DynamicClassAttribute)  # type: ignore
                         and k not in exclude_names
                     ):
                         names.append(k)

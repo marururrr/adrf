@@ -1,5 +1,6 @@
 import asyncio
-from typing import Any, List, Optional
+from collections.abc import Awaitable
+from typing import Any, List, Optional, cast
 
 from asgiref.sync import async_to_sync, sync_to_async
 from django.http import HttpRequest
@@ -11,12 +12,13 @@ from rest_framework.views import APIView as DRFAPIView
 from adrf.requests import AsyncRequest
 
 
-class APIView(DRFAPIView):
+class AsyncAPIViewMixin:
     def sync_dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any):
         """
         `.sync_dispatch()` is pretty much the same as Django's regular dispatch,
         but with extra hooks for startup, finalize, and exception handling.
         """
+        assert isinstance(self, DRFAPIView)
         self.args = args
         self.kwargs = kwargs
         request = self.initialize_request(request, *args, **kwargs)
@@ -27,6 +29,7 @@ class APIView(DRFAPIView):
             self.initial(request, *args, **kwargs)
 
             # Get the appropriate handler method
+            assert isinstance(request.method, str)
             if request.method.lower() in self.http_method_names:
                 handler = getattr(
                     self, request.method.lower(), self.http_method_not_allowed
@@ -48,6 +51,7 @@ class APIView(DRFAPIView):
         except for awaiting the handler function and with extra hooks for startup,
         finalize, and exception handling.
         """
+        assert isinstance(self, DRFAPIView)
         self.args = args
         self.kwargs = kwargs
         request = self.initialize_request(request, *args, **kwargs)
@@ -58,6 +62,7 @@ class APIView(DRFAPIView):
             await sync_to_async(self.initial)(request, *args, **kwargs)
 
             # Get the appropriate handler method
+            assert isinstance(request.method, str)
             if request.method.lower() in self.http_method_names:
                 handler = getattr(
                     self, request.method.lower(), self.http_method_not_allowed
@@ -86,10 +91,13 @@ class APIView(DRFAPIView):
         else:
             return self.sync_dispatch(request, *args, **kwargs)
 
-    def initialize_request(self, request: HttpRequest, *args: Any, **kwargs: Any):
+    def initialize_request(
+        self, request: HttpRequest, *args: Any, **kwargs: Any
+    ) -> Request:
         """
         Returns the initial request object.
         """
+        assert isinstance(self, DRFAPIView)
         parser_context = self.get_parser_context(request)
 
         return AsyncRequest(
@@ -101,12 +109,14 @@ class APIView(DRFAPIView):
         )
 
     def check_permissions(self, request: Request) -> None:
-        permissions = self.get_permissions()
+        assert isinstance(self, DRFAPIView)
+        permissions: List[Any] = self.get_permissions()
 
         if not permissions:
             return
 
-        sync_permissions, async_permissions = [], []
+        sync_permissions: List[BasePermission] = []
+        async_permissions: List[BasePermission] = []
 
         for permission in permissions:
             if asyncio.iscoroutinefunction(permission.has_permission):
@@ -114,6 +124,7 @@ class APIView(DRFAPIView):
             else:
                 sync_permissions.append(permission)
 
+        assert isinstance(request, AsyncRequest)
         if async_permissions:
             async_to_sync(self.check_async_permissions)(request, async_permissions)
 
@@ -127,9 +138,16 @@ class APIView(DRFAPIView):
         Check if the request should be permitted asynchronously.
         Raises an appropriate exception if the request is not permitted.
         """
+        assert isinstance(self, DRFAPIView)
 
         has_permissions = await asyncio.gather(
-            *[permission.has_permission(request, self) for permission in permissions],
+            *cast(
+                List[Awaitable[Any]],
+                [
+                    permission.has_permission(request, self)
+                    for permission in permissions
+                ],
+            ),
             return_exceptions=True,
         )
 
@@ -140,7 +158,7 @@ class APIView(DRFAPIView):
                 self.permission_denied(
                     request,
                     message=getattr(has_permission, "detail", None),
-                    code=getattr(has_permission, "code", None),
+                    code=getattr(has_permission, "code", None),  # type: ignore  # djangorestframework-types-0.8.0 has wrong declarations
                 )
 
     def check_sync_permissions(
@@ -150,22 +168,25 @@ class APIView(DRFAPIView):
         Check if the request should be permitted synchronously.
         Raises an appropriate exception if the request is not permitted.
         """
+        assert isinstance(self, DRFAPIView)
 
         for permission in permissions:
             if not permission.has_permission(request, self):
                 self.permission_denied(
                     request,
                     message=getattr(permission, "detail", None),
-                    code=getattr(permission, "code", None),
+                    code=getattr(permission, "code", None),  # type: ignore  # djangorestframework-types-0.8.0 has wrong declarations
                 )
 
     def check_object_permissions(self, request: Request, obj: Any) -> None:
-        permissions = self.get_permissions()
+        assert isinstance(self, DRFAPIView)
+        permissions: List[Any] = self.get_permissions()
 
         if not permissions:
             return
 
-        sync_permissions, async_permissions = [], []
+        sync_permissions: List[BasePermission] = []
+        async_permissions: List[BasePermission] = []
 
         for permission in permissions:
             if asyncio.iscoroutinefunction(permission.has_object_permission):
@@ -173,6 +194,7 @@ class APIView(DRFAPIView):
             else:
                 sync_permissions.append(permission)
 
+        assert isinstance(request, AsyncRequest)
         if async_permissions:
             async_to_sync(self.check_async_object_permissions)(
                 request, async_permissions, obj
@@ -188,12 +210,16 @@ class APIView(DRFAPIView):
         Check if the request should be permitted asynchronously.
         Raises an appropriate exception if the request is not permitted.
         """
+        assert isinstance(self, DRFAPIView)
 
         has_object_permissions = await asyncio.gather(
-            *[
-                permission.has_object_permission(request, self, obj)
-                for permission in permissions
-            ],
+            *cast(
+                List[Awaitable[Any]],
+                [
+                    permission.has_object_permission(request, self, obj)
+                    for permission in permissions
+                ],
+            ),
             return_exceptions=True,
         )
 
@@ -204,7 +230,7 @@ class APIView(DRFAPIView):
                 self.permission_denied(
                     request,
                     message=getattr(has_object_permission, "detail", None),
-                    code=getattr(has_object_permission, "code", None),
+                    code=getattr(has_object_permission, "code", None),  # type: ignore  # djangorestframework-types-0.8.0 has wrong declarations
                 )
 
     def check_sync_object_permissions(
@@ -214,13 +240,14 @@ class APIView(DRFAPIView):
         Check if the request should be permitted synchronously.
         Raises an appropriate exception if the request is not permitted.
         """
+        assert isinstance(self, DRFAPIView)
 
         for permission in permissions:
             if not permission.has_object_permission(request, self, obj):
                 self.permission_denied(
                     request,
                     message=getattr(permission, "detail", None),
-                    code=getattr(permission, "code", None),
+                    code=getattr(permission, "code", None),  # type: ignore  # djangorestframework-types-0.8.0 has wrong declarations
                 )
 
     def check_throttles(self, request: Request) -> None:
@@ -228,14 +255,16 @@ class APIView(DRFAPIView):
         Check if the request should be throttled.
         Raises an appropriate exception if the request is throttled.
         """
-        throttles = self.get_throttles()
+        assert isinstance(self, DRFAPIView)
+        throttles: List[Any] = self.get_throttles()
 
         if not throttles:
             return
 
-        throttle_durations = []
+        throttle_durations: List[Optional[float]] = []
 
-        sync_throttles, async_throttles = [], []
+        sync_throttles: List[BaseThrottle] = []
+        async_throttles: List[BaseThrottle] = []
 
         for throttle in throttles:
             if asyncio.iscoroutinefunction(throttle.allow_request):
@@ -245,6 +274,7 @@ class APIView(DRFAPIView):
 
         throttle_durations.extend(self.check_sync_throttles(request, sync_throttles))
 
+        assert isinstance(request, AsyncRequest)
         throttle_durations.extend(
             async_to_sync(self.check_async_throttles)(request, async_throttles)
         )
@@ -257,7 +287,8 @@ class APIView(DRFAPIView):
             ]
 
             duration = max(durations, default=None)
-            self.throttled(request, duration)
+            if duration is not None:
+                self.throttled(request, duration)
 
     async def check_async_throttles(
         self, request: AsyncRequest, throttles: List[BaseThrottle]
@@ -266,11 +297,12 @@ class APIView(DRFAPIView):
         Check if the request should be throttled asynchronously.
         Raises an appropriate exception if the request is throttled.
         """
+        assert isinstance(self, DRFAPIView)
 
-        throttle_durations = []
+        throttle_durations: List[Optional[float]] = []
 
         for throttle in throttles:
-            if not await throttle.allow_request(request, self):
+            if not await cast(Awaitable[bool], throttle.allow_request(request, self)):
                 throttle_durations.append(throttle.wait())
 
         return throttle_durations
@@ -282,11 +314,16 @@ class APIView(DRFAPIView):
         Check if the request should be throttled synchronously.
         Raises an appropriate exception if the request is throttled.
         """
+        assert isinstance(self, DRFAPIView)
 
-        throttle_durations = []
+        throttle_durations: List[Optional[float]] = []
 
         for throttle in throttles:
             if not throttle.allow_request(request, self):
                 throttle_durations.append(throttle.wait())
 
         return throttle_durations
+
+
+class APIView(AsyncAPIViewMixin, DRFAPIView):
+    pass
