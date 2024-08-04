@@ -1,12 +1,13 @@
-from typing import Any, cast
+from typing import Any, Dict, cast
 
 from asgiref.sync import sync_to_async
 from django.db.models import Model, QuerySet
-from rest_framework import mixins, status
+from rest_framework import status
 from rest_framework.generics import GenericAPIView as DRFGenericAPIView
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer as DRFBaseSerializer
+from rest_framework.settings import api_settings
 
 from adrf.serializers import (
     serializer_adata,
@@ -14,7 +15,7 @@ from adrf.serializers import (
 )
 
 
-class CreateModelMixin(mixins.CreateModelMixin):
+class CreateModelMixin:
     """
     Create a model instance.
     """
@@ -30,8 +31,14 @@ class CreateModelMixin(mixins.CreateModelMixin):
     async def perform_acreate(self, serializer: DRFBaseSerializer):
         await serializer_asave(serializer)
 
+    def get_success_headers(self, data: Dict[str, Any]) -> Dict[str, str]:
+        try:
+            return {"Location": str(data[api_settings.URL_FIELD_NAME])}
+        except (TypeError, KeyError):
+            return {}
 
-class ListModelMixin(mixins.ListModelMixin):
+
+class ListModelMixin:
     """
     List a queryset.
     """
@@ -53,7 +60,7 @@ class ListModelMixin(mixins.ListModelMixin):
         return Response(data, status=status.HTTP_200_OK)
 
 
-class RetrieveModelMixin(mixins.RetrieveModelMixin):
+class RetrieveModelMixin:
     """
     Retrieve a model instance.
     """
@@ -68,7 +75,7 @@ class RetrieveModelMixin(mixins.RetrieveModelMixin):
         return Response(data, status=status.HTTP_200_OK)
 
 
-class UpdateModelMixin(mixins.UpdateModelMixin):
+class UpdateModelMixin:
     """
     Update a model instance.
     """
@@ -101,7 +108,7 @@ class UpdateModelMixin(mixins.UpdateModelMixin):
         return await self.aupdate(request, *args, **kwargs)
 
 
-class DestroyModelMixin(mixins.DestroyModelMixin):
+class DestroyModelMixin:
     """
     Destroy a model instance.
     """
