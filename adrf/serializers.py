@@ -57,7 +57,7 @@ class BaseSerializer(DRFBaseSerializer):
         return list_serializer_class(*args, **list_kwargs)
 
     @async_property
-    async def adata(self) -> Any:
+    async def adata(self):
         if hasattr(self, "initial_data") and not hasattr(self, "_validated_data"):
             msg = (
                 "When a serializer is passed a `data` keyword argument you "
@@ -225,7 +225,7 @@ class ListSerializer(BaseSerializer, DRFListSerializer):
         )
 
     @async_property
-    async def adata(self) -> Any:
+    async def adata(self):
         ret = await super().adata
         return ReturnList(ret, serializer=self)
 
