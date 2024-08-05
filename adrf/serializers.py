@@ -8,8 +8,6 @@ from typing import (
     List,
     NoReturn,
     Protocol,
-    Set,
-    Type,
     TypeGuard,
     cast,
 )
@@ -18,7 +16,44 @@ from asgiref.sync import sync_to_async
 from async_property import async_property
 from async_property.base import AsyncPropertyDescriptor
 from django.db import models
-from rest_framework.fields import Field, SkipField
+from django.db.models.fields.related_descriptors import (
+    ForwardManyToOneDescriptor,
+    ReverseManyToOneDescriptor,
+    ReverseOneToOneDescriptor,
+)
+
+from rest_framework.fields import (  # NOQA # isort:skip
+    Field,
+    SkipField,
+    BooleanField,
+    CharField,
+    DateField,
+    DateTimeField,
+    DecimalField,
+    DurationField,
+    EmailField,
+    FileField,
+    FilePathField,
+    FloatField,
+    HStoreField,
+    ImageField,
+    IntegerField,
+    IPAddressField,
+    JSONField,
+    # ListField,
+    ModelField,
+    SlugField,
+    TimeField,
+    URLField,
+    UUIDField,
+)
+from rest_framework.relations import (
+    HyperlinkedIdentityField,
+    PrimaryKeyRelatedField,
+    RelatedField,
+)
+
+# SlugRelatedField,
 from rest_framework.serializers import (
     LIST_SERIALIZER_KWARGS,
     model_meta,  # type: ignore
@@ -29,6 +64,43 @@ from rest_framework.serializers import ListSerializer as DRFListSerializer
 from rest_framework.serializers import ModelSerializer as DRFModelSerializer
 from rest_framework.serializers import Serializer as DRFSerializer
 from rest_framework.utils.serializer_helpers import ReturnDict, ReturnList
+
+# NOTE This is the list of fields defined by DRF known to be free from
+# SynchronousOnlyOperation when accessed as django Model instance attributes.
+
+# In the original implementation of adrf, there is a list, named 'DRF_FIELDS',
+# generated from DRFModelSerializer.serializer_field_mappings and some class variables
+# of DRFModelSerializer to know the non-existence of `ato_representation`, we cannot
+# use the same approach here because the mappings or variables can be modified by user
+# and user can specify Fields that requires SynchronousOnlyOperation.
+SOOP_FREE_DRF_FIELDS = set(
+    [
+        BooleanField,
+        CharField,
+        DateField,
+        DateTimeField,
+        DecimalField,
+        DurationField,
+        EmailField,
+        FileField,
+        FilePathField,
+        FloatField,
+        HStoreField,
+        ImageField,
+        IntegerField,
+        IPAddressField,
+        JSONField,
+        # ListField,  # ListField is not safe in general.  child.to_representation() can use SynchronousOnlyOperation.
+        ModelField,
+        SlugField,
+        TimeField,
+        URLField,
+        UUIDField,
+        PrimaryKeyRelatedField,
+        HyperlinkedIdentityField,
+        # SlugRelatedField,  # SlugRelatedField is not safe in general.  slug_field can have multiple '__'s.
+    ]
+)
 
 
 class AsyncSerializerProtocol(Protocol):
@@ -93,21 +165,6 @@ async def serializer_asave(serializer: DRFBaseSerializer, **kwargs: Any):
         if has_asave(serializer)
         else sync_to_async(serializer.save)(**kwargs)
     )
-
-
-# NOTE This is the list of fields defined by DRF for which we need to call to_representation.
-SOOP_FREE_DRF_FIELDS = cast(  # djangorestframework-types-0.8.0 has wrong declarations
-    Set[Type[Field[Any, Any, Any, Any]]],
-    set(
-        list(DRFModelSerializer.serializer_field_mapping.values())
-        + [
-            DRFModelSerializer.serializer_related_field,
-            DRFModelSerializer.serializer_related_to_field,  # SlugRelatedField is free from SO-op?
-            DRFModelSerializer.serializer_url_field,
-            DRFModelSerializer.serializer_choice_field,
-        ]
-    ),
-)
 
 
 class BaseSerializer(DRFBaseSerializer):
@@ -214,6 +271,79 @@ class BaseSerializer(DRFBaseSerializer):
         return self.instance
 
 
+async def get_model_field_value(
+    instance: models.Model, field: Field[Any, Any, Any, Any]
+):
+    if isinstance(field, RelatedField) and field.use_pk_only_optimization():
+        return field.get_attribute(instance)
+
+    descriptor = getattr(instance.__class__, field.source)
+    if not hasattr(descriptor, "is_cached") or descriptor.is_cached(instance):
+        return field.get_attribute(instance)
+
+    if isinstance(descriptor, ForwardManyToOneDescriptor):
+        # ForwardOneToOneDescriptor also comes here.
+        if None not in descriptor.field.get_local_related_value(instance):  # type: ignore  # django-types-0.19.1 lacks declarations
+            # MEMO: (asynchronized) partial inline copy of
+            # django.db.models.fields.related_descriptors.ForwardManyToOneDescriptor.__get__()
+
+            # Since qs.aget() called below is still implemented with sync_to_async() in django-5.0.7,
+            # this can be so expensive that cons eat up pros of 'async'.
+            instance_field_class = getattr(instance.__class__, field.source)
+            qs = instance_field_class.get_queryset(instance=instance)
+            try:
+                val = await qs.aget(
+                    instance_field_class.field.get_reverse_related_filter(instance)
+                )
+                setattr(instance, field.source, val)
+                return val
+            except descriptor.RelatedObjectDoesNotExist:
+                raise
+        else:
+            if descriptor.field.null:
+                return None
+            raise descriptor.RelatedObjectDoesNotExist(
+                "%s has no %s."
+                % (descriptor.field.model.__name__, descriptor.field.name)
+            )
+
+    if isinstance(descriptor, ReverseOneToOneDescriptor):
+        # MEMO: (asynchronized) partial inline copy of
+        # django.db.models.fields.related_descriptors.ReverseOneToOneDescriptor.__get__()
+        related_pk = instance.pk
+        if related_pk is None:
+            rel_obj = None
+        else:
+            filter_args = descriptor.related.field.get_forward_related_filter(instance)
+            try:
+                rel_obj = await descriptor.get_queryset(instance=instance).aget(
+                    **filter_args
+                )
+            except descriptor.related.related_model.DoesNotExist:
+                rel_obj = None
+            else:
+                descriptor.related.field.set_cached_value(rel_obj, instance)
+        descriptor.related.set_cached_value(instance, rel_obj)
+        if rel_obj is None:
+            raise descriptor.RelatedObjectDoesNotExist(
+                "%s has no %s."
+                % (instance.__class__.__name__, descriptor.related.get_accessor_name())
+            )
+        return rel_obj
+
+    # Should treat user defined descriptors that manipulate DBs here?
+    if isinstance(descriptor, ReverseManyToOneDescriptor):
+        # ManyToManyDescriptor also comes here because it is a child of
+        # ReverseManyToOneDescriptor.
+        # Since these descriptors return a Manager for every single call,
+        # it does not raise SynchronousOnlyOperation here.
+        return field.get_attribute(instance)
+
+    # For unknown possibly user defined descriptors.
+    # They may require SynchronousOnlyOperation.
+    return await sync_to_async(field.get_attribute)(instance)
+
+
 class Serializer(BaseSerializer, DRFSerializer):
     @async_property
     async def adata(self):
@@ -232,10 +362,16 @@ class Serializer(BaseSerializer, DRFSerializer):
 
         ret: Dict[str, Any] = OrderedDict()
         fields = self._readable_fields
+        is_model_instance = isinstance(instance, models.Model)
 
         for field in fields:
             try:
-                attribute = field.get_attribute(instance)
+                # attribute = field.get_attribute(instance)
+                attribute = (
+                    await get_model_field_value(instance, field)
+                    if is_model_instance
+                    else field.get_attribute(instance)
+                )
             except SkipField:
                 continue
 
