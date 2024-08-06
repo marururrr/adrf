@@ -1,5 +1,4 @@
 from collections import ChainMap
-from logging import getLogger
 
 import pytest
 from asgiref.sync import sync_to_async
@@ -9,11 +8,9 @@ from rest_framework.test import APIRequestFactory
 
 from adrf.serializers import ModelSerializer, Serializer
 
-from .models import Additional, Order, User
+from .models import Additional, Delivery, Order, User
 
 factory = APIRequestFactory()
-
-logger = getLogger(__name__)
 
 
 class MockObject:
@@ -275,6 +272,11 @@ class TestModelSerializerWithRelatedField(TestCase):
                 model = User
                 fields = ("username",)
 
+        class OrderSerializer(ModelSerializer):
+            class Meta:
+                model = Order
+                fields = "__all__"
+
         # This requires a router?
         # class OrderHyperlinkedUserSerializer(ModelSerializer):
         #     user = serializers.HyperlinkedRelatedField(read_only=True)
@@ -283,26 +285,28 @@ class TestModelSerializerWithRelatedField(TestCase):
         #         model = Order
         #         fields = ("id", "user", "name")
 
-        class OrderStringUserSerializer(ModelSerializer):
-            user = serializers.StringRelatedField()
+        class DeliveryStringUserSerializer(ModelSerializer):
+            order = serializers.StringRelatedField()
 
             class Meta:
-                model = Order
-                fields = ("id", "user", "name")
+                model = Delivery
+                fields = ("id", "order", "deliverer")
 
-        class OrderSlugUserSerializer(ModelSerializer):
-            user = serializers.SlugRelatedField(slug_field="username", read_only=True)
-
-            class Meta:
-                model = Order
-                fields = ("id", "user", "name")
-
-        class OrderInlineUserSerializer(ModelSerializer):
-            user = UserSerializer()
+        class DeliverySlugUserSerializer(ModelSerializer):
+            deliverer = serializers.SlugRelatedField(
+                slug_field="username", read_only=True
+            )
 
             class Meta:
-                model = Order
-                fields = ("id", "user", "name")
+                model = Delivery
+                fields = ("id", "order", "deliverer")
+
+        class DeliveryInlineOrderSerializer(ModelSerializer):
+            order = OrderSerializer()
+
+            class Meta:
+                model = Delivery
+                fields = ("id", "order", "deliverer")
 
         class AdditionalSerializer(ModelSerializer):
             class Meta:
@@ -316,81 +320,144 @@ class TestModelSerializerWithRelatedField(TestCase):
                 model = User
                 fields = ("id", "username", "additional")
 
-        self.string_serializer = OrderStringUserSerializer
-        self.slug_serializer = OrderSlugUserSerializer
-        self.inline_serializer = OrderInlineUserSerializer
+        self.string_serializer = DeliveryStringUserSerializer
+        self.slug_serializer = DeliverySlugUserSerializer
+        self.inline_serializer = DeliveryInlineOrderSerializer
 
         self.additional_serializer = AdditionalSerializer
         self.extended_user_serializer = ExtendedUserSerializer
 
-    async def test_order_serializer_string_by_instance(self):
+    async def test_delivery_serializer_string_by_instance(self):
         user = await User.objects.acreate(username="test")
         order = await Order.objects.acreate(user=user, name="Test order")
-        data = {"id": order.pk, "user": "test", "name": "Test order"}
-        serializer = self.string_serializer(instance=order)
-        assert await serializer.adata == data
-
-    async def test_order_serializer_string_by_fresh_instance(self):
-        user = await User.objects.acreate(username="test")
-        order = await Order.objects.acreate(user=user, name="Test order")
-        data = {"id": order.pk, "user": "test", "name": "Test order"}
-        order_from_db = await Order.objects.aget(pk=order.pk)
-        serializer = self.string_serializer(instance=order_from_db)
-        assert await serializer.adata == data
-
-    async def test_order_serializer_slug_by_instance(self):
-        user = await User.objects.acreate(username="test")
-        order = await Order.objects.acreate(user=user, name="Test order")
-        data = {"id": order.pk, "user": "test", "name": "Test order"}
-        serializer = self.slug_serializer(instance=order)
-        assert await serializer.adata == data
-
-    async def test_order_serializer_slug_by_fresh_instance(self):
-        user = await User.objects.acreate(username="test")
-        order = await Order.objects.acreate(user=user, name="Test order")
-        data = {"id": order.pk, "user": "test", "name": "Test order"}
-        order_from_db = await Order.objects.aget(pk=order.pk)
-        serializer = self.slug_serializer(instance=order_from_db)
-        assert await serializer.adata == data
-
-    async def test_order_serializer_inline_by_instance(self):
-        user = await User.objects.acreate(username="test")
-        order = await Order.objects.acreate(user=user, name="Test order")
-        data = {"id": order.pk, "user": {"username": "test"}, "name": "Test order"}
-        serializer = self.inline_serializer(instance=order)
-        assert await serializer.adata == data
-
-    async def test_order_serializer_inline_by_fresh_instance(self):
-        user = await User.objects.acreate(username="test")
-        order = await Order.objects.acreate(user=user, name="Test order")
-        data = {"id": order.pk, "user": {"username": "test"}, "name": "Test order"}
-        order_from_db = await Order.objects.aget(pk=order.pk)
-        assert order_from_db.pk == order.pk
-        assert order_from_db.user_id == user.pk
-        serializer = self.inline_serializer(instance=order_from_db)
-        assert await serializer.adata == data
-
-    async def test_order_serializer_inline_by_fresh_instance_with_user_None(self):
-        order = await Order.objects.acreate(user=None, name="Test order")
-        order_from_db = await Order.objects.aget(pk=order.pk)
-        serializer = self.inline_serializer(instance=order_from_db)
-        assert await serializer.adata == {
+        deliverer = await User.objects.acreate(username="runner")
+        delivery = await Delivery.objects.acreate(order=order, deliverer=deliverer)
+        serializer = self.string_serializer(instance=delivery)
+        data = {
             "id": order.pk,
-            "user": None,
-            "name": "Test order",
+            "order": "Order<Test order by test>",
+            "deliverer": deliverer.pk,
+        }
+        assert await serializer.adata == data
+
+    async def test_delivery_serializer_string_by_fresh_instance(self):
+        user = await User.objects.acreate(username="test")
+        order = await Order.objects.acreate(user=user, name="Test order")
+        deliverer = await User.objects.acreate(username="runner")
+        delivery = await Delivery.objects.acreate(order=order, deliverer=deliverer)
+        data = {
+            "id": order.pk,
+            "order": "Order<Test order by test>",
+            "deliverer": deliverer.pk,
+        }
+        delivery_from_db = await Delivery.objects.aget(pk=delivery.pk)
+        serializer = self.string_serializer(instance=delivery_from_db)
+        assert await serializer.adata == data
+
+    async def test_delivery_serializer_slug_by_instance(self):
+        user = await User.objects.acreate(username="test")
+        order = await Order.objects.acreate(user=user, name="Test order")
+        deliverer = await User.objects.acreate(username="runner")
+        delivery = await Delivery.objects.acreate(order=order, deliverer=deliverer)
+        data = {
+            "id": delivery.pk,
+            "order": order.pk,
+            "deliverer": "runner",
+        }
+        serializer = self.slug_serializer(instance=delivery)
+        assert await serializer.adata == data
+
+    async def test_delivery_serializer_slug_by_fresh_instance(self):
+        user = await User.objects.acreate(username="test")
+        order = await Order.objects.acreate(user=user, name="Test order")
+        deliverer = await User.objects.acreate(username="runner")
+        delivery = await Delivery.objects.acreate(order=order, deliverer=deliverer)
+        data = {
+            "id": delivery.pk,
+            "order": order.pk,
+            "deliverer": "runner",
+        }
+        delivery_from_db = await Delivery.objects.aget(pk=delivery.pk)
+        serializer = self.slug_serializer(instance=delivery_from_db)
+        assert await serializer.adata == data
+
+    async def test_delivery_serializer_inline_by_instance(self):
+        user = await User.objects.acreate(username="test")
+        order = await Order.objects.acreate(user=user, name="Test order")
+        deliverer = await User.objects.acreate(username="runner")
+        delivery = await Delivery.objects.acreate(order=order, deliverer=deliverer)
+        data = {
+            "id": delivery.pk,
+            "order": {"id": order.pk, "user": user.pk, "name": "Test order"},
+            "deliverer": deliverer.pk,
+        }
+        serializer = self.inline_serializer(instance=delivery)
+        assert await serializer.adata == data
+
+    async def test_delivery_serializer_inline_by_fresh_instance(self):
+        user = await User.objects.acreate(username="test")
+        order = await Order.objects.acreate(user=user, name="Test order")
+        deliverer = await User.objects.acreate(username="runner")
+        delivery = await Delivery.objects.acreate(order=order, deliverer=deliverer)
+        delivery_from_db = await Delivery.objects.aget(pk=delivery.pk)
+        assert delivery_from_db.pk == delivery.pk
+        serializer = self.inline_serializer(instance=delivery_from_db)
+        data = {
+            "id": delivery.pk,
+            "order": {"id": order.pk, "user": user.pk, "name": "Test order"},
+            "deliverer": deliverer.pk,
+        }
+        assert await serializer.adata == data
+
+    async def test_delivery_serializer_inline_by_fresh_instance_with_deferred_fields(
+        self,
+    ):
+        user = await User.objects.acreate(username="test")
+        order = await Order.objects.acreate(user=user, name="Test order")
+        deliverer = await User.objects.acreate(username="runner")
+        delivery = await Delivery.objects.acreate(order=order, deliverer=deliverer)
+        data = {
+            "id": delivery.pk,
+            "order": {"id": order.pk, "user": user.pk, "name": "Test order"},
+            "deliverer": deliverer.pk,
+        }
+        delivery_from_db = await Delivery.objects.defer("order", "deliverer").aget(
+            pk=delivery.pk
+        )
+        serializer = self.inline_serializer(instance=delivery_from_db)
+        assert await serializer.adata == data
+
+    async def test_delivery_serializer_inline_by_fresh_instance_with_order_None(
+        self,
+    ):
+        # user = await User.objects.acreate(username="test")
+        # order = await Order.objects.acreate(user=user, name="Test order")
+        deliverer = await User.objects.acreate(username="runner")
+        delivery = await Delivery.objects.acreate(order=None, deliverer=deliverer)
+        delivery_from_db = await Delivery.objects.aget(pk=delivery.pk)
+        serializer = self.inline_serializer(instance=delivery_from_db)
+        assert await serializer.adata == {
+            "id": delivery.pk,
+            "order": None,
+            "deliverer": deliverer.pk,
         }
 
-    async def test_order_serializer_inline_by_fresh_instance_with_integrity_hack(self):
-        order = await Order.objects.acreate(user=None, name="Test order")
-        order_from_db = await Order.objects.aget(pk=order.pk)
-        serializer = self.inline_serializer(instance=order_from_db)
-        descriptor = getattr(order_from_db.__class__, "user")
+    async def test_delivery_serializer_inline_by_fresh_instance_with_order_None_integrity_hack(
+        self,
+    ):
+        # user = await User.objects.acreate(username="test")
+        # order = await Order.objects.acreate(user=user, name="Test order")
+        deliverer = await User.objects.acreate(username="runner")
+        delivery = await Delivery.objects.acreate(order=None, deliverer=deliverer)
+        delivery_from_db = await Delivery.objects.aget(pk=delivery.pk)
+        serializer = self.inline_serializer(instance=delivery_from_db)
+        descriptor = getattr(delivery_from_db.__class__, "order")
         descriptor.field.null = False
         with pytest.raises(Exception) as exc:
-            assert await serializer.adata
-        logger.debug("exc: %r", exc)
+            _ = await serializer.adata
         descriptor.field.null = True
 
+    ### Additional
     async def test_adittional_serializer(self):
         user = await User.objects.acreate(username="test")
         additional = await Additional.objects.acreate(user=user, nickname="Mr.T")

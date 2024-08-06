@@ -8,6 +8,7 @@ from typing import (
     List,
     NoReturn,
     Protocol,
+    Set,
     TypeGuard,
     cast,
 )
@@ -134,11 +135,7 @@ class HasAdata(Protocol):
 
 
 def has_adata(obj: Any) -> TypeGuard[HasAdata]:
-    if hasattr(obj, "adata"):
-        assert isinstance(getattr(obj.__class__, "adata"), AsyncPropertyDescriptor)
-        return True
-    return False
-    # return isinstance(getattr(obj.__class__, "adata", None), AsyncPropertyDescriptor)
+    return isinstance(getattr(obj.__class__, "adata", None), AsyncPropertyDescriptor)
 
 
 class HasAsave(Protocol):
@@ -272,18 +269,26 @@ class BaseSerializer(DRFBaseSerializer):
 
 
 async def get_model_field_value(
-    instance: models.Model, field: Field[Any, Any, Any, Any]
+    instance: models.Model, field: Field[Any, Any, Any, Any], deferred_fields: Set[str]
 ):
+    descriptor = getattr(instance.__class__, field.source, None)
+    if descriptor is None:
+        return field.get_attribute(instance)
+
+    if (
+        hasattr(descriptor, "field")
+        and descriptor.field.get_attname() in deferred_fields
+    ):
+        return await sync_to_async(field.get_attribute)(instance)
+
     if isinstance(field, RelatedField) and field.use_pk_only_optimization():
         return field.get_attribute(instance)
 
-    descriptor = getattr(instance.__class__, field.source)
     if not hasattr(descriptor, "is_cached") or descriptor.is_cached(instance):
         return field.get_attribute(instance)
 
     if isinstance(descriptor, ForwardManyToOneDescriptor):
-        # ForwardOneToOneDescriptor also comes here.
-        if None not in descriptor.field.get_local_related_value(instance):  # type: ignore  # django-types-0.19.1 lacks declarations
+        if None not in descriptor.field.get_local_related_value(instance):  # type: ignore  # django-types-0.19.1 lacks declarations:
             # MEMO: (asynchronized) partial inline copy of
             # django.db.models.fields.related_descriptors.ForwardManyToOneDescriptor.__get__()
 
@@ -363,12 +368,16 @@ class Serializer(BaseSerializer, DRFSerializer):
         ret: Dict[str, Any] = OrderedDict()
         fields = self._readable_fields
         is_model_instance = isinstance(instance, models.Model)
+        deferred_fields: Set[str] = (
+            instance.get_deferred_fields() if is_model_instance else set()
+        )
 
         for field in fields:
             try:
-                # attribute = field.get_attribute(instance)
                 attribute = (
-                    await get_model_field_value(instance, field)
+                    await sync_to_async(field.get_attribute)(instance)
+                    if field.source in deferred_fields
+                    else await get_model_field_value(instance, field, deferred_fields)
                     if is_model_instance
                     else field.get_attribute(instance)
                 )
