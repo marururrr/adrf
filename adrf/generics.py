@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, TypeVar
 
-from asgiref.sync import async_to_sync
+from asgiref.sync import async_to_sync, sync_to_async
 from django.db.models import Manager, QuerySet
 from django.db.models.base import Model
 from django.http import Http404
@@ -92,7 +92,9 @@ class GenericAPIView(views.AsyncAPIViewMixin, DRFGenericAPIView):
             return await self.paginator.paginate_queryset(
                 queryset, self.request, view=self
             )
-        return self.paginator.paginate_queryset(queryset, self.request, view=self)
+        return await sync_to_async(self.paginator.paginate_queryset)(
+            queryset, self.request, view=self
+        )
 
     async def get_apaginated_response(self, data: Any):
         """
