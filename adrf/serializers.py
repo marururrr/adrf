@@ -16,12 +16,13 @@ from typing import (
 from asgiref.sync import sync_to_async
 from async_property import async_property
 from async_property.base import AsyncPropertyDescriptor
-from django.db import models
+from django.db import IntegrityError, models
 from django.db.models.fields.related_descriptors import (
     ForwardManyToOneDescriptor,
     ReverseManyToOneDescriptor,
     ReverseOneToOneDescriptor,
 )
+from django.db.models.query_utils import DeferredAttribute
 
 from rest_framework.fields import (  # NOQA # isort:skip
     Field,
@@ -53,8 +54,6 @@ from rest_framework.relations import (
     PrimaryKeyRelatedField,
     RelatedField,
 )
-
-# SlugRelatedField,
 from rest_framework.serializers import (
     LIST_SERIALIZER_KWARGS,
     model_meta,  # type: ignore
@@ -144,6 +143,11 @@ class HasAsave(Protocol):
 
 def has_asave(obj: Any) -> TypeGuard[HasAsave]:
     return asyncio.iscoroutinefunction(getattr(obj, "asave", None))
+
+
+async def serializer_ais_valid(serializer: DRFBaseSerializer):
+    """Invoke is_valid() within a synchronous context."""
+    return await sync_to_async(serializer.is_valid)()
 
 
 async def serializer_adata(serializer: DRFBaseSerializer):
@@ -272,7 +276,11 @@ async def get_model_field_value(
     instance: models.Model, field: Field[Any, Any, Any, Any], deferred_fields: Set[str]
 ):
     descriptor = getattr(instance.__class__, field.source, None)
-    if descriptor is None:
+    assert descriptor is not None
+
+    # Which is cheaper?
+    # if isinstance(descriptor, DeferredAttribute):
+    if type(descriptor) is DeferredAttribute:
         return field.get_attribute(instance)
 
     if (
@@ -284,7 +292,7 @@ async def get_model_field_value(
     if isinstance(field, RelatedField) and field.use_pk_only_optimization():
         return field.get_attribute(instance)
 
-    if not hasattr(descriptor, "is_cached") or descriptor.is_cached(instance):
+    if hasattr(descriptor, "is_cached") and descriptor.is_cached(instance):
         return field.get_attribute(instance)
 
     if isinstance(descriptor, ForwardManyToOneDescriptor):
@@ -302,13 +310,16 @@ async def get_model_field_value(
                 )
                 setattr(instance, field.source, val)
                 return val
-            except descriptor.RelatedObjectDoesNotExist:
-                raise
+            except qs.model.DoesNotExist:
+                raise IntegrityError(
+                    "%s lost %s."
+                    % (descriptor.field.model.__name__, descriptor.field.name)
+                )
         else:
             if descriptor.field.null:
                 return None
-            raise descriptor.RelatedObjectDoesNotExist(
-                "%s has no %s."
+            raise IntegrityError(
+                "%s has no %s. Used to have null=True?"
                 % (descriptor.field.model.__name__, descriptor.field.name)
             )
 
@@ -346,7 +357,7 @@ async def get_model_field_value(
 
     # For unknown possibly user defined descriptors.
     # They may require SynchronousOnlyOperation.
-    return await sync_to_async(field.get_attribute)(instance)
+    return await sync_to_async(field.get_attribute)(instance)  # pragma: no cover
 
 
 class Serializer(BaseSerializer, DRFSerializer):
@@ -533,7 +544,7 @@ class ModelSerializer(Serializer, DRFModelSerializer):
         if many_to_many:
             for field_name, value in many_to_many.items():
                 field = getattr(instance, field_name)
-                field.set(value)
+                await sync_to_async(field.set)(value)
 
         return instance
 
@@ -559,6 +570,6 @@ class ModelSerializer(Serializer, DRFModelSerializer):
         # updated instance and we do not want it to collide with .update()
         for attr, value in m2m_fields:
             field = getattr(instance, attr)
-            field.set(value)
+            await sync_to_async(field.set)(value)
 
         return instance

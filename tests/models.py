@@ -11,7 +11,7 @@ class Order(models.Model):
 
 
 class Delivery(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, null=True)
+    order = models.ForeignKey(Order, on_delete=models.DO_NOTHING, null=True)
     deliverer = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
 
     def __str__(self):
@@ -21,3 +21,8 @@ class Delivery(models.Model):
 class Additional(models.Model):
     nickname = models.TextField()
     user = models.OneToOneField(User, primary_key=True, on_delete=models.CASCADE)
+
+
+class ContactList(models.Model):
+    user = models.OneToOneField(User, primary_key=True, on_delete=models.CASCADE)
+    contacts = models.ManyToManyField(User, related_name="listed_contacts")
