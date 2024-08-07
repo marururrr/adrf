@@ -8,7 +8,7 @@ readme = "README.md"
 license = "MIT"
 homepage = "https://github.com/em1208/adrf"
 repository = "https://github.com/em1208/adrf"
-include = ["LICENSE"]
+include = ["LICENSE", "adrf/py.typed"]
 
 [tool.poetry.dependencies]
 python = ">=3.8"
@@ -24,9 +24,19 @@ tox = "^4.16.0"
 faker = "^26.1.0"
 ruff = "^0.5.5"
 
+[tool.poetry-dynamic-versioning]
+enable = true
+pattern = "upstream_(?P<base>\\d+\\.\\d+\\.\\d+)_bp"
+format-jinja = "{% if distance == 0 %}{{ base }}{% else %}{{base}}+{{branch}}{{distance}}.{{commit}}{% endif %}"
+
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+# requires = ["poetry-core"]
+# build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
+build-backend = "poetry_dynamic_versioning.backend"
+
+[tool.ruff]
+target-version = "py310"
 
 [tool.ruff.lint]
 extend-select = ["I"]
@@ -44,4 +54,10 @@ exclude_lines = [
 ]
 
 [tool.pytest]
-addopts="--tb=short --strict-markers -ra"
+addopts= [
+    "--tb=short",
+    "--strict-markers",
+    "-ra",
+    "--cov",
+    "--cov-report=xml",
+]
