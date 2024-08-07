@@ -28,7 +28,7 @@ class ViewSetMixin(DRFViewSetMixin):
     view = MyViewSet.as_view({'get': 'list', 'post': 'create'})
     """
 
-    @classonlymethod
+    @classonlymethod  # type: ignore
     def as_view(cls, actions: Optional[Dict[str, str]] = None, **initkwargs: Any):  # pyright: ignore[reportIncompatibleMethodOverride]
         """
         Because of the way class based views create a closure around the

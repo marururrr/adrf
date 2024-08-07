@@ -1,3 +1,5 @@
+import asyncio
+import warnings
 from typing import Any, Dict, cast
 
 from asgiref.sync import sync_to_async
@@ -11,6 +13,7 @@ from rest_framework.settings import api_settings
 
 from adrf.serializers import (
     serializer_adata,
+    serializer_ais_valid,
     serializer_asave,
 )
 
@@ -20,15 +23,23 @@ class CreateModelMixin:
     Create a model instance.
     """
 
-    async def acreate(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+    async def create(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         serializer = cast(DRFGenericAPIView, self).get_serializer(data=request.data)
         await sync_to_async(serializer.is_valid)(raise_exception=True)
-        await self.perform_acreate(serializer)
+        if asyncio.iscoroutinefunction(self.perform_create):
+            await self.perform_create(serializer)
+        else:
+            if not getattr(self, "use_sync_perform_create", False):
+                warnings.warn(
+                    "Non async perform_create(): %s" % self.__class__.__name__,
+                    PendingDeprecationWarning,
+                )
+            await sync_to_async(self.perform_create)(serializer)
         data = await serializer_adata(serializer)
         headers = self.get_success_headers(data)
         return Response(data, status=status.HTTP_201_CREATED, headers=headers)
 
-    async def perform_acreate(self, serializer: DRFBaseSerializer):
+    async def perform_create(self, serializer: DRFBaseSerializer):
         await serializer_asave(serializer)
 
     def get_success_headers(self, data: Dict[str, Any]) -> Dict[str, str]:
@@ -43,17 +54,17 @@ class ListModelMixin:
     List a queryset.
     """
 
-    async def alist(self, *args: Any, **kwargs: Any) -> Response:
+    async def list(self, *args: Any, **kwargs: Any) -> Response:
         from adrf.generics import GenericAPIView
 
         assert isinstance(self, GenericAPIView)
         queryset = self.filter_queryset(self.get_queryset())  # type: ignore  # why?
 
-        page = await self.apaginate_queryset(cast(QuerySet[Any], queryset))
+        page = await self.paginate_queryset(cast(QuerySet[Any], queryset))
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             data = await serializer_adata(serializer)
-            return await self.get_apaginated_response(data)
+            return self.get_paginated_response(data)
 
         serializer = self.get_serializer(queryset, many=True)
         data = await serializer_adata(serializer)
@@ -65,7 +76,7 @@ class RetrieveModelMixin:
     Retrieve a model instance.
     """
 
-    async def aretrieve(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+    async def retrieve(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         from adrf.generics import GenericAPIView
 
         assert isinstance(self, GenericAPIView)
@@ -80,15 +91,23 @@ class UpdateModelMixin:
     Update a model instance.
     """
 
-    async def aupdate(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+    async def update(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         from adrf.generics import GenericAPIView
 
         assert isinstance(self, GenericAPIView)
         partial = kwargs.pop("partial", False)
         instance = await self.aget_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        await sync_to_async(serializer.is_valid)(raise_exception=True)
-        await self.perform_aupdate(serializer)
+        await serializer_ais_valid(serializer, raise_exception=True)
+        if asyncio.iscoroutinefunction(self.perform_update):
+            await self.perform_update(serializer)
+        else:
+            if not getattr(self, "use_sync_perform_update", False):
+                warnings.warn(
+                    "Non async perform_update(): %s" % self.__class__.__name__,
+                    PendingDeprecationWarning,
+                )
+            await sync_to_async(self.perform_update)(serializer)
 
         if getattr(instance, "_prefetched_objects_cache", None):
             # If 'prefetch_related' has been applied to a queryset, we need to
@@ -98,14 +117,14 @@ class UpdateModelMixin:
 
         return Response(data, status=status.HTTP_200_OK)
 
-    async def perform_aupdate(self, serializer: DRFBaseSerializer):
+    async def perform_update(self, serializer: DRFBaseSerializer):
         await serializer_asave(serializer)
 
-    async def partial_aupdate(
+    async def partial_update(
         self, request: Request, *args: Any, **kwargs: Any
     ) -> Response:
         kwargs["partial"] = True
-        return await self.aupdate(request, *args, **kwargs)
+        return await self.update(request, *args, **kwargs)
 
 
 class DestroyModelMixin:
@@ -113,13 +132,21 @@ class DestroyModelMixin:
     Destroy a model instance.
     """
 
-    async def adestroy(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+    async def destroy(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         from adrf.generics import GenericAPIView
 
         assert isinstance(self, GenericAPIView)
         instance = await self.aget_object()
-        await self.perform_adestroy(instance)
+        if asyncio.iscoroutinefunction(self.perform_destroy):
+            await self.perform_destroy(instance)
+        else:
+            if not getattr(self, "use_sync_perform_destroy", False):
+                warnings.warn(
+                    "Non async perform_destroy(): %s" % self.__class__.__name__,
+                    PendingDeprecationWarning,
+                )
+            await sync_to_async(self.perform_destroy)(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    async def perform_adestroy(self, instance: Model):
+    async def perform_destroy(self, instance: Model):
         await instance.adelete()

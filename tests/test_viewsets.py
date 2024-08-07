@@ -123,11 +123,9 @@ class UserViewSet(ModelViewSet):
 
 class ModelViewSetIntegrationTests(TestCase):
     def setUp(self):
-        self.list_create = UserViewSet.as_view({"get": "alist", "post": "acreate"})
-        self.retrieve_update = UserViewSet.as_view(
-            {"get": "aretrieve", "put": "aupdate"}
-        )
-        self.destroy = UserViewSet.as_view({"delete": "adestroy"})
+        self.list_create = UserViewSet.as_view({"get": "list", "post": "create"})
+        self.retrieve_update = UserViewSet.as_view({"get": "retrieve", "put": "update"})
+        self.destroy = UserViewSet.as_view({"delete": "destroy"})
 
     def test_list_succeeds(self):
         User.objects.create(username="test")
