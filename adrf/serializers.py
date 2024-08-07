@@ -145,9 +145,11 @@ def has_asave(obj: Any) -> TypeGuard[HasAsave]:
     return asyncio.iscoroutinefunction(getattr(obj, "asave", None))
 
 
-async def serializer_ais_valid(serializer: DRFBaseSerializer):
+async def serializer_ais_valid(
+    serializer: DRFBaseSerializer, *, raise_exception: bool = False
+):
     """Invoke is_valid() within a synchronous context."""
-    return await sync_to_async(serializer.is_valid)()
+    return await sync_to_async(serializer.is_valid)(raise_exception=raise_exception)
 
 
 async def serializer_adata(serializer: DRFBaseSerializer):
