@@ -280,8 +280,8 @@ class BaseSerializer(DRFBaseSerializer):
 
 
 async def get_model_field_value(
-    instance: models.Model, field: Field[Any, Any, Any, Any], deferred_fields: Set[str]
-):
+    instance: models.Model, field: Any, deferred_fields: Set[str]
+) -> Any:
     descriptor = getattr(instance.__class__, field.source, None)
     assert descriptor is not None
 
