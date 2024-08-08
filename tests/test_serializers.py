@@ -11,13 +11,68 @@ from rest_framework.test import APIRequestFactory
 from adrf.serializers import (
     ModelSerializer,
     Serializer,
+    serializer_adata,
     serializer_ais_valid,
     serializer_asave,
 )
+from tests.models import SimpleUser
+from tests.serializers import SimpleUserDRFSerializer, SimpleUserSerializer
 
 from .models import Additional, ContactList, Delivery, Order, User
 
 factory = APIRequestFactory()
+
+
+class TestFunctions(TestCase):
+    async def test_serializer_adata_drf(self):
+        serializer = SimpleUserDRFSerializer(
+            data={"username": "test", "password": "pass", "age": 14}
+        )
+        assert await serializer_ais_valid(serializer)
+        with pytest.warns(PendingDeprecationWarning, match="Pure DRF serializer?"):
+            assert await serializer_adata(serializer) == {
+                "username": "test",
+                "password": "pass",
+                "age": 14,
+            }
+
+    async def test_serializer_asave_drf(self):
+        serializer = SimpleUserDRFSerializer(
+            data={"username": "test", "password": "pass", "age": 14}
+        )
+        assert await serializer_ais_valid(serializer)
+        assert not await SimpleUser.objects.filter(username="test").aexists()
+        with pytest.warns(PendingDeprecationWarning, match="Pure DRF serializer?"):
+            user = await serializer_asave(serializer)
+            assert user is not None
+            assert user.username == "test"
+            assert user.password == "pass"
+            assert user.age == 14
+            assert await SimpleUser.objects.aget(username="test") == user
+
+    async def test_serializer_adata_adrf(self):
+        serializer = SimpleUserSerializer(
+            data={"username": "test", "password": "pass", "age": 14}
+        )
+        assert await serializer_ais_valid(serializer)
+        assert await serializer_adata(serializer) == {
+            "username": "test",
+            "password": "pass",
+            "age": 14,
+        }
+
+    async def test_serializer_asave_adrf(self):
+        serializer = SimpleUserSerializer(
+            data={"username": "test", "password": "pass", "age": 14}
+        )
+        assert await serializer_ais_valid(serializer)
+        assert not await SimpleUser.objects.filter(username="test").aexists()
+        user = await serializer_asave(serializer)
+        assert user is not None
+        assert user.username == "test"
+        assert user.password == "pass"
+        assert user.age == 14
+        assert await SimpleUser.objects.aget(username="test") == user
 
 
 class MockObject:

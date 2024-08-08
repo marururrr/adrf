@@ -1,5 +1,6 @@
 import asyncio
 import traceback
+import warnings
 from collections import OrderedDict
 from typing import (
     Any,
@@ -154,20 +155,24 @@ async def serializer_ais_valid(
 
 async def serializer_adata(serializer: DRFBaseSerializer):
     """Use adata if the serializer supports it, data otherwise."""
-    return await (
-        serializer.adata
-        if has_adata(serializer)
-        else sync_to_async(lambda: serializer.data)()
+    if has_adata(serializer):
+        return await serializer.adata
+    warnings.warn(
+        "Pure DRF serializer?: %s" % serializer.__class__.__name__,
+        PendingDeprecationWarning,
     )
+    return await sync_to_async(lambda: serializer.data)()
 
 
 async def serializer_asave(serializer: DRFBaseSerializer, **kwargs: Any):
     """Use asave() if the serializer supports it, save() otherwise."""
-    return await (
-        serializer.asave(**kwargs)
-        if has_asave(serializer)
-        else sync_to_async(serializer.save)(**kwargs)
+    if has_asave(serializer):
+        return await serializer.asave(**kwargs)
+    warnings.warn(
+        "Pure DRF serializer?: %s" % serializer.__class__.__name__,
+        PendingDeprecationWarning,
     )
+    return await sync_to_async(serializer.save)(**kwargs)
 
 
 class BaseSerializer(DRFBaseSerializer):
