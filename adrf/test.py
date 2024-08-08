@@ -1,5 +1,6 @@
-from collections.abc import Sequence
-from typing import Any, Dict, Optional, Type, cast
+import inspect
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Any, Dict, Optional, Type, TypeVar, cast
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser
@@ -21,6 +22,23 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.test import force_authenticate
+
+_T = TypeVar("_T")
+
+
+def assume_awaitable(obj: _T) -> Awaitable[_T]:
+    assert inspect.isawaitable(obj)
+    return obj
+
+
+def assume_async_view(view: Any) -> Callable[..., Awaitable[Response]]:
+    assert getattr(getattr(view, "view_class", None), "view_is_async", None) is True
+    return view
+
+
+def assume_async_client(client: Any) -> "AsyncAPIClient":
+    assert isinstance(client, AsyncAPIClient)
+    return client
 
 
 class AsyncForceAuthClientHandler(AsyncClientHandler):  # type: ignore
