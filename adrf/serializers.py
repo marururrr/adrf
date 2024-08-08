@@ -2,6 +2,7 @@ import asyncio
 import traceback
 import warnings
 from collections import OrderedDict
+from logging import getLogger
 from typing import (
     Any,
     Callable,
@@ -65,6 +66,8 @@ from rest_framework.serializers import ListSerializer as DRFListSerializer
 from rest_framework.serializers import ModelSerializer as DRFModelSerializer
 from rest_framework.serializers import Serializer as DRFSerializer
 from rest_framework.utils.serializer_helpers import ReturnDict, ReturnList
+
+logger = getLogger(__name__)
 
 # NOTE This is the list of fields defined by DRF known to be free from
 # SynchronousOnlyOperation when accessed as django Model instance attributes.
@@ -283,7 +286,14 @@ async def get_model_field_value(
     instance: models.Model, field: Any, deferred_fields: Set[str]
 ) -> Any:
     descriptor = getattr(instance.__class__, field.source, None)
-    assert descriptor is not None
+    if descriptor is None:
+        logger.debug(
+            "XXX: get_model_field_value: descriptor is None: field: %r, deferred_fields: %r",
+            field,
+            deferred_fields,
+        )
+        return field.get_attribute(instance)
+    # assert descriptor is not None
 
     # Which is cheaper?
     # if isinstance(descriptor, DeferredAttribute):
