@@ -37,6 +37,14 @@ class ObjectPermissionTestView(APIView):
         return HttpResponse("ok")
 
 
+class AsyncObjectPermissionTestView(APIView):
+    permission_classes = (AsyncObjectPermission,)
+
+    async def get(self, request):
+        await self.acheck_object_permissions(request, request.path)
+        return HttpResponse("ok")
+
+
 @override_settings(ROOT_URLCONF=__name__)
 class TestAsyncObjectPermission(TestCase):
     async def test_async_object_permission(self):

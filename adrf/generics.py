@@ -57,7 +57,7 @@ class GenericAPIView(views.AsyncAPIViewMixin, DRFGenericAPIView):
         obj = await aget_object_or_404(queryset, **filter_kwargs)  # type: ignore
 
         # May raise a permission denied
-        self.check_object_permissions(self.request, obj)
+        await self.acheck_object_permissions(self.request, obj)
 
         return obj
 

@@ -203,6 +203,31 @@ class AsyncAPIViewMixin:
         if sync_permissions:
             self.check_sync_object_permissions(request, sync_permissions, obj)
 
+    async def acheck_object_permissions(self, request: Request, obj: Any) -> None:
+        assert isinstance(self, DRFAPIView)
+        permissions: List[Any] = self.get_permissions()
+
+        if not permissions:
+            return
+
+        sync_permissions: List[BasePermission] = []
+        async_permissions: List[BasePermission] = []
+
+        for permission in permissions:
+            if asyncio.iscoroutinefunction(permission.has_object_permission):
+                async_permissions.append(permission)
+            else:
+                sync_permissions.append(permission)
+
+        assert isinstance(request, AsyncRequest)
+        if async_permissions:
+            await self.check_async_object_permissions(request, async_permissions, obj)
+
+        if sync_permissions:
+            await sync_to_async(self.check_sync_object_permissions)(
+                request, sync_permissions, obj
+            )
+
     async def check_async_object_permissions(
         self, request: AsyncRequest, permissions: List[BasePermission], obj: Any
     ) -> None:

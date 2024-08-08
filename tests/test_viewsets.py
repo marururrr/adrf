@@ -1,3 +1,4 @@
+import pytest
 from asgiref.sync import async_to_sync
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -26,6 +27,32 @@ class AsyncViewSet(ViewSet):
 
     async def create(self, request, *args, **kwargs):
         return Response({"method": "POST", "data": request.data})
+
+
+class ViewSetTests(TestCase):
+    def test_no_actions(self):
+        with pytest.raises(
+            TypeError, match="The `actions` argument must be provided when"
+        ):
+            BasicViewSet.as_view()
+
+    def test_invalid_kwargs(self):
+        with pytest.raises(
+            TypeError,
+            match="You tried to pass in the get method name as a keyword argument",
+        ):
+            BasicViewSet.as_view({"delete": "destroy"}, get="spam")
+
+        with pytest.raises(
+            TypeError, match=r"BasicViewSet\(\) received an invalid keyword 'eggs'"
+        ):
+            BasicViewSet.as_view({"get": "retrieve"}, eggs="")
+
+        with pytest.raises(
+            TypeError,
+            match=r"BasicViewSet\(\) received both `name` and `suffix`, which are",
+        ):
+            BasicViewSet.as_view({"post": "create"}, name="", suffix="")
 
 
 class ViewSetIntegrationTests(TestCase):

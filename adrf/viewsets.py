@@ -151,6 +151,7 @@ class ViewSet(ViewSetMixin, AsyncAPIViewMixin, DRFAPIView):
     _ASYNC_NON_DISPATCH_METHODS = [
         "check_async_object_permissions",
         "async_dispatch",
+        "acheck_object_permissions",
         "check_async_permissions",
         "check_async_throttles",
     ]
