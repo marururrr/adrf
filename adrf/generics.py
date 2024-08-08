@@ -2,10 +2,10 @@ import asyncio
 from typing import Any, TypeVar
 
 from asgiref.sync import async_to_sync, sync_to_async
+from django.core.exceptions import ValidationError
 from django.db.models import Manager, QuerySet
 from django.db.models.base import Model
 from django.http import Http404
-from rest_framework.exceptions import ValidationError
 from rest_framework.generics import GenericAPIView as DRFGenericAPIView
 from rest_framework.request import Request
 
@@ -15,7 +15,7 @@ from adrf.shortcuts import aget_object_or_404 as _aget_object_or_404  # type: ig
 _T = TypeVar("_T", bound=Model)
 
 
-def aget_object_or_404(
+async def aget_object_or_404(
     queryset: type[_T] | Manager[_T] | QuerySet[_T],
     *filter_args: Any,
     **filter_kwargs: Any,
@@ -25,7 +25,7 @@ def aget_object_or_404(
     if the filter_kwargs don't match the required types.
     """
     try:
-        return _aget_object_or_404(queryset, *filter_args, **filter_kwargs)  # type: ignore
+        return await _aget_object_or_404(queryset, *filter_args, **filter_kwargs)  # type: ignore
     except (TypeError, ValueError, ValidationError):
         raise Http404
 

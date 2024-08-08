@@ -1,4 +1,9 @@
+import uuid
+
+import pytest
 from asgiref.sync import async_to_sync
+from django.db import models
+from django.http import Http404
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIRequestFactory
@@ -39,6 +44,29 @@ class DestroyUserView(generics.DestroyAPIView):
 class UpdateUserView(generics.UpdateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+
+
+# simplified copy of UUIDForeignKeyTarget from django-rest-framework/tests/models.py
+class UUIDForeignKeyTarget(models.Model):
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    name = models.CharField(max_length=100)
+
+
+# asynchronized version of GetObjectOr404Tests from django-rest-framework/tests/test_generics.py
+class AgetObjectOr404Tests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.uuid_object = UUIDForeignKeyTarget.objects.create(name="bar")
+
+    async def test_aget_object(self):
+        obj = await generics.aget_object_or_404(
+            UUIDForeignKeyTarget, pk=self.uuid_object.pk
+        )
+        assert obj == self.uuid_object
+
+    async def test_aget_object_or_404_with_invalid_string_for_uuid(self):
+        with pytest.raises(Http404):
+            await generics.aget_object_or_404(UUIDForeignKeyTarget, pk="not-a-uuid")
 
 
 class TestCreateUserView(TestCase):
