@@ -26,3 +26,9 @@ class Additional(models.Model):
 class ContactList(models.Model):
     user = models.OneToOneField(User, primary_key=True, on_delete=models.CASCADE)
     contacts = models.ManyToManyField(User, related_name="listed_contacts")
+
+
+class SimpleUser(models.Model):
+    username = models.CharField(max_length=32, unique=True)
+    password = models.CharField(max_length=32)
+    age = models.IntegerField()
